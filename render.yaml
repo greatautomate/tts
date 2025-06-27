@@ -1,4 +1,3 @@
-
 services:
   - type: worker
     name: medusaxd-tts-bot
@@ -21,10 +20,10 @@ services:
           type: redis
           name: medusaxd-tts-bot-redis
           property: connectionString
+    # Removed scaling configuration for simple single-instance deployment
     
   - type: redis
     name: medusaxd-tts-bot-redis
     plan: starter
     maxmemoryPolicy: allkeys-lru
-
-
+    ipAllowList: [] # Allow all IPs (empty list means no restrictions)
