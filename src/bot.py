@@ -28,7 +28,7 @@ def setup_logging(log_level: str):
 logger = logging.getLogger(__name__)
 
 class TelegramTTSBot:
-    """Enhanced Telegram TTS Bot with Redis integration and fixed voice handling"""
+    """Enhanced Telegram TTS Bot with Redis integration and HTML formatting"""
 
     def __init__(self, config: Config):
         self.config = config
@@ -124,14 +124,14 @@ class TelegramTTSBot:
         """Handle /start command"""
         user_name = update.effective_user.first_name or "User"
         welcome_message = f"""
-🎤 **Welcome to ElevenLabs TTS Bot, {user_name}!**
+🎤 <b>Welcome to ElevenLabs TTS Bot, {user_name}!</b>
 
 Transform any text into high-quality speech using AI voices.
 
-**🚀 Quick Start:**
+<b>🚀 Quick Start:</b>
 Just send me any text message and I'll convert it to speech!
 
-**📋 Available Commands:**
+<b>📋 Available Commands:</b>
 /start - Show this welcome message
 /voices - List all available AI voices
 /setvoice [name] - Change your voice preference
@@ -139,14 +139,14 @@ Just send me any text message and I'll convert it to speech!
 /stats - View usage statistics
 /help - Get detailed help
 
-**💡 Tips:**
+<b>💡 Tips:</b>
 • Keep messages under {self.config.max_message_length} characters
 • Supports 32+ languages
 • Try different voices for variety!
 
-**Example:** `/setvoice Rachel`
+<b>Example:</b> <code>/setvoice Rachel</code>
         """
-        await update.message.reply_text(welcome_message, parse_mode='Markdown')
+        await update.message.reply_text(welcome_message, parse_mode='HTML')
         await self.increment_usage("start_command", update.effective_user.id)
         logger.info(f"User {update.effective_user.id} ({user_name}) started the bot")
 
@@ -154,30 +154,30 @@ Just send me any text message and I'll convert it to speech!
         """Handle /help command"""
         current_voice = await self.get_user_voice_name(update.effective_user.id)
         help_text = f"""
-**📖 How to use this bot:**
+<b>📖 How to use this bot:</b>
 
-**1. 🎵 Convert text to speech:**
+<b>1. 🎵 Convert text to speech:</b>
 Simply send any text message and get an audio file back.
 
-**2. 🎭 Change voices:**
-Use `/setvoice [voice_name]` to select different AI voices.
-Example: `/setvoice Liam`
+<b>2. 🎭 Change voices:</b>
+Use <code>/setvoice [voice_name]</code> to select different AI voices.
+Example: <code>/setvoice Liam</code>
 
-**3. 📋 Browse voices:**
-Use `/voices` to see all available voice options.
+<b>3. 📋 Browse voices:</b>
+Use <code>/voices</code> to see all available voice options.
 
-**4. ⚙️ Check settings:**
-Use `/settings` to view your current configuration.
+<b>4. ⚙️ Check settings:</b>
+Use <code>/settings</code> to view your current configuration.
 
-**📏 Limitations:**
+<b>📏 Limitations:</b>
 • Max message length: {self.config.max_message_length} characters
 • Rate limit: {self.config.rate_limit_calls} requests per {self.config.rate_limit_window} seconds
 
-**🎤 Current voice:** {current_voice}
+<b>🎤 Current voice:</b> {current_voice}
 
-**🌍 Supported languages:** 32+ including English, Spanish, French, German, Italian, Portuguese, Chinese, Japanese, Korean, and more!
+<b>🌍 Supported languages:</b> 32+ including English, Spanish, French, German, Italian, Portuguese, Chinese, Japanese, Korean, and more!
 
-**💡 Pro Tips:**
+<b>💡 Pro Tips:</b>
 • Use punctuation for natural pauses
 • ALL CAPS will sound emphasized
 • Question marks create rising intonation
@@ -185,7 +185,7 @@ Use `/settings` to view your current configuration.
 
 Need more help? Contact support through the bot developer.
         """
-        await update.message.reply_text(help_text, parse_mode='Markdown')
+        await update.message.reply_text(help_text, parse_mode='HTML')
         await self.increment_usage("help_command", update.effective_user.id)
 
     async def settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -206,42 +206,43 @@ Need more help? Contact support through the bot developer.
         voice_category = user_settings.get('voice_category', 'generated')
 
         settings_text = f"""
-⚙️ **Your Personal Settings:**
+⚙️ <b>Your Personal Settings:</b>
 
-**🎤 Voice Configuration:**
-• **Name:** {voice_name}
-• **ID:** `{voice_id[:16]}...`
-• **Category:** {voice_category.replace('_', ' ').title()}
-• **Model:** {self.config.default_model}
+<b>🎤 Voice Configuration:</b>
+• <b>Name:</b> {voice_name}
+• <b>ID:</b> <code>{voice_id}</code>
+• <b>Category:</b> {voice_category.replace('_', ' ').title()}
+• <b>Model:</b> {self.config.default_model}
 
-**📊 Usage Limits:**
-• **Max Message Length:** {self.config.max_message_length} characters
-• **Rate Limit:** {self.config.rate_limit_calls} requests per {self.config.rate_limit_window} seconds
-• **Current Usage:** {rate_status['calls']} requests in current window
-• **Reset Time:** {rate_status['remaining_time']} seconds
+<b>📊 Usage Limits:</b>
+• <b>Max Message Length:</b> {self.config.max_message_length} characters
+• <b>Rate Limit:</b> {self.config.rate_limit_calls} requests per {self.config.rate_limit_window} seconds
+• <b>Current Usage:</b> {rate_status['calls']} requests in current window
+• <b>Reset Time:</b> {rate_status['remaining_time']} seconds
 
-**💾 Data Storage:**
-• **Type:** {'Redis (Persistent across restarts)' if self.redis_client else 'In-Memory (Session only)'}
-• **Settings Saved:** {'Yes - survives bot restarts' if self.redis_client else 'No - reset on restart'}
+<b>💾 Data Storage:</b>
+• <b>Type:</b> {'Redis (Persistent across restarts)' if self.redis_client else 'In-Memory (Session only)'}
+• <b>Settings Saved:</b> {'Yes - survives bot restarts' if self.redis_client else 'No - reset on restart'}
 
-**🔧 Configuration:**
-• **Environment:** {self.config.environment}
-• **Log Level:** {self.config.log_level}
+<b>🔧 Configuration:</b>
+• <b>Environment:</b> {self.config.environment}
+• <b>Log Level:</b> {self.config.log_level}
 
-**💡 Want to change your voice?**
-Use `/voices` to see options, then `/setvoice [name]`
+<b>💡 Want to change your voice?</b>
+Use <code>/voices</code> to see options, then <code>/setvoice [name]</code>
         """
-        await update.message.reply_text(settings_text, parse_mode='Markdown')
+        await update.message.reply_text(settings_text, parse_mode='HTML')
         await self.increment_usage("settings_command", user_id)
 
     async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /stats command"""
         if not self.redis_client:
             await update.message.reply_text(
-                "📊 **Statistics Unavailable**\n\n"
+                "📊 <b>Statistics Unavailable</b>\n\n"
                 "Statistics tracking requires Redis database connection.\n"
                 "Currently running in memory-only mode.\n\n"
-                "Contact the bot administrator to enable statistics."
+                "Contact the bot administrator to enable statistics.",
+                parse_mode='HTML'
             )
             return
 
@@ -260,38 +261,38 @@ Use `/voices` to see options, then `/setvoice [name]`
             except Exception as e:
                 logger.error(f"Error getting user stats: {e}")
 
-            stats_text = "📊 **Usage Statistics:**\n\n"
+            stats_text = "📊 <b>Usage Statistics:</b>\n\n"
 
             # Global stats
             if stats:
-                stats_text += "**🌍 Global Stats:**\n"
+                stats_text += "<b>🌍 Global Stats:</b>\n"
                 for metric, count in stats.items():
                     formatted_metric = metric.replace("_", " ").title()
-                    stats_text += f"• **{formatted_metric}:** {count:,}\n"
+                    stats_text += f"• <b>{formatted_metric}:</b> {count:,}\n"
                 stats_text += "\n"
 
             # User stats
             if user_stats:
-                stats_text += "**👤 Your Personal Stats:**\n"
+                stats_text += "<b>👤 Your Personal Stats:</b>\n"
                 for metric, count in user_stats.items():
                     formatted_metric = metric.replace("_", " ").title()
-                    stats_text += f"• **{formatted_metric}:** {count:,}\n"
+                    stats_text += f"• <b>{formatted_metric}:</b> {count:,}\n"
             else:
-                stats_text += "**👤 Your Personal Stats:**\nNo personal statistics available yet.\nStart using the bot to see your stats!"
+                stats_text += "<b>👤 Your Personal Stats:</b>\nNo personal statistics available yet.\nStart using the bot to see your stats!"
 
             if not stats and not user_stats:
                 stats_text += "No statistics available yet.\nStart using the bot to generate data!"
 
-            await update.message.reply_text(stats_text, parse_mode='Markdown')
+            await update.message.reply_text(stats_text, parse_mode='HTML')
 
         except Exception as e:
             logger.error(f"Error getting stats: {e}")
             await update.message.reply_text("❌ Error retrieving statistics. Please try again later.")
 
     async def list_voices_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /voices command with proper API integration"""
+        """Handle /voices command with complete voice listing and easy copy format"""
         # Send initial message
-        status_msg = await update.message.reply_text("🔄 Fetching available voices from ElevenLabs...")
+        status_msg = await update.message.reply_text("🔄 Fetching all available voices from ElevenLabs...")
 
         try:
             # Always fetch fresh data from API for accuracy
@@ -306,9 +307,6 @@ Use `/voices` to see options, then `/setvoice [name]`
                 voices_data = [voice.to_dict() for voice in available_voices]
                 await self.redis_client.cache_voices(voices_data, ttl=1800)  # 30 minutes cache
 
-            # Format voice list with categories
-            voice_list = "🎭 **Available AI Voices:**\n\n"
-
             # Group by category
             categorized_voices = {}
             for voice in available_voices:
@@ -317,35 +315,46 @@ Use `/voices` to see options, then `/setvoice [name]`
                     categorized_voices[category] = []
                 categorized_voices[category].append(voice)
 
-            # Display categorized voices
-            total_shown = 0
+            # Format complete voice list with HTML and easy copy names
+            voice_list = "🎭 <b>Complete AI Voices List:</b>\n\n"
+
+            # Display all voices by category with copy-friendly format
+            total_voices = 0
             for category, voices_in_category in categorized_voices.items():
-                if total_shown >= 25:  # Limit total display to prevent message overflow
-                    break
+                category_emoji = {
+                    "generated": "🤖",
+                    "cloned": "👤", 
+                    "professional": "🎨",
+                    "premade": "🔊"
+                }.get(category, "🎙️")
 
-                category_emoji = "🤖" if category == "generated" else "👤" if category == "cloned" else "🎨" if category == "professional" else "🔊"
                 category_title = category.replace('_', ' ').title()
-                voice_list += f"{category_emoji} **{category_title} Voices:**\n"
+                voice_list += f"{category_emoji} <b>{category_title} Voices:</b>\n"
 
-                for voice in voices_in_category[:10]:  # Limit per category
-                    if total_shown >= 25:
-                        break
-                    # Show name and partial ID for verification
-                    voice_list += f"  • **{voice.name}** (`{voice.voice_id[:8]}...`)\n"
-                    total_shown += 1
+                # Show all voices in this category
+                for voice in voices_in_category:
+                    # Make voice name easy to copy with code formatting
+                    voice_list += f"  • <code>{voice.name}</code>\n"
+                    total_voices += 1
 
                 voice_list += "\n"
 
-            if len(available_voices) > total_shown:
-                voice_list += f"... and **{len(available_voices) - total_shown} more voices** available\n\n"
+            # Add usage instructions
+            voice_list += f"<b>📝 How to use:</b>\n"
+            voice_list += f"1. Copy any voice name above (tap to copy)\n"
+            voice_list += f"2. Use: <code>/setvoice [voice_name]</code>\n\n"
 
-            voice_list += f"**📝 Usage Examples:**\n"
-            voice_list += f"• `/setvoice Rachel` - Set voice to Rachel\n"
-            voice_list += f"• `/setvoice Liam` - Set voice to Liam\n\n"
-            voice_list += f"**📊 Total Available:** {len(available_voices)} voices\n"
-            voice_list += f"**🎯 Current Voice:** {await self.get_user_voice_name(update.effective_user.id)}"
+            voice_list += f"<b>💡 Examples:</b>\n"
+            # Show examples with actual available voice names
+            example_voices = [voice.name for voice in available_voices[:3]]
+            for example_voice in example_voices:
+                voice_list += f"• <code>/setvoice {example_voice}</code>\n"
 
-            await status_msg.edit_text(voice_list, parse_mode='Markdown')
+            voice_list += f"\n<b>📊 Total Available:</b> {total_voices} voices\n"
+            voice_list += f"<b>🎯 Your Current Voice:</b> {await self.get_user_voice_name(update.effective_user.id)}\n\n"
+            voice_list += f"<b>💡 Pro Tip:</b> Tap any voice name above to copy it, then use /setvoice!"
+
+            await status_msg.edit_text(voice_list, parse_mode='HTML')
             await self.increment_usage("voices_command", update.effective_user.id)
 
         except Exception as e:
@@ -356,15 +365,15 @@ Use `/voices` to see options, then `/setvoice [name]`
         """Handle /setvoice command with proper voice search"""
         if not context.args:
             await update.message.reply_text(
-                "**🎤 Voice Selection Help**\n\n"
+                "<b>🎤 Voice Selection Help</b>\n\n"
                 "Please specify a voice name to change your voice.\n\n"
-                "**Usage:** `/setvoice [voice_name]`\n"
-                "**Examples:**\n"
-                "• `/setvoice Rachel`\n"
-                "• `/setvoice Liam`\n"
-                "• `/setvoice Sarah`\n\n"
-                "Use /voices to see all available voice options.", 
-                parse_mode='Markdown'
+                "<b>Usage:</b> <code>/setvoice [voice_name]</code>\n"
+                "<b>Examples:</b>\n"
+                "• <code>/setvoice Rachel</code>\n"
+                "• <code>/setvoice Liam</code>\n"
+                "• <code>/setvoice Sarah</code>\n\n"
+                "Use /voices to see all available voice options with easy copy format.", 
+                parse_mode='HTML'
             )
             return
 
@@ -372,7 +381,7 @@ Use `/voices` to see options, then `/setvoice [name]`
         user_id = update.effective_user.id
 
         # Send searching message
-        status_msg = await update.message.reply_text(f"🔍 Searching for voice: **{voice_name}**...", parse_mode='Markdown')
+        status_msg = await update.message.reply_text(f"🔍 Searching for voice: <b>{voice_name}</b>...", parse_mode='HTML')
 
         try:
             # Use the dedicated method to find voice by name
@@ -390,45 +399,54 @@ Use `/voices` to see options, then `/setvoice [name]`
                 category_info = f" ({selected_voice.category.replace('_', ' ').title()})" if selected_voice.category else ""
 
                 success_msg = f"""
-✅ **Voice Successfully Changed!**
+✅ <b>Voice Successfully Changed!</b>
 
-**🎤 New Voice:** {selected_voice.name}{category_info}
-**🆔 Voice ID:** `{selected_voice.voice_id}`
-**📂 Category:** {selected_voice.category.replace('_', ' ').title() if selected_voice.category else 'Unknown'}
+<b>🎤 New Voice:</b> {selected_voice.name}{category_info}
+<b>🆔 Voice ID:</b> <code>{selected_voice.voice_id}</code>
+<b>📂 Category:</b> {selected_voice.category.replace('_', ' ').title() if selected_voice.category else 'Unknown'}
 
-**💡 Test it out:** Send me any text message to hear your new voice!
+<b>💡 Test it out:</b> Send me any text message to hear your new voice!
+
+<b>🔄 Change again:</b> Use <code>/voices</code> to browse all options
                 """
 
-                await status_msg.edit_text(success_msg, parse_mode='Markdown')
+                await status_msg.edit_text(success_msg, parse_mode='HTML')
                 await self.increment_usage("voice_change", user_id)
                 logger.info(f"User {user_id} changed voice to {selected_voice.name} (ID: {selected_voice.voice_id})")
             else:
                 # Get all voices for suggestions
                 all_voices = await self.tts_generator.get_voices()
                 similar_voices = []
+                exact_matches = []
+                partial_matches = []
                 voice_name_lower = voice_name.lower()
 
-                # Find partial matches
+                # Find exact and partial matches
                 for voice in all_voices:
-                    if voice_name_lower in voice.name.lower():
-                        similar_voices.append(voice.name)
+                    voice_name_api_lower = voice.name.lower()
+                    if voice_name_api_lower == voice_name_lower:
+                        exact_matches.append(voice.name)
+                    elif voice_name_lower in voice_name_api_lower or voice_name_api_lower in voice_name_lower:
+                        partial_matches.append(voice.name)
 
-                error_msg = f"❌ **Voice '{voice_name}' not found.**\n\n"
+                similar_voices = exact_matches + partial_matches
+
+                error_msg = f"❌ <b>Voice '{voice_name}' not found.</b>\n\n"
 
                 if similar_voices:
-                    error_msg += "**🤔 Did you mean one of these?**\n"
-                    for similar_voice in similar_voices[:5]:  # Show top 5 suggestions
-                        error_msg += f"• `/setvoice {similar_voice}`\n"
-                    error_msg += f"\n**💡 Tip:** Voice names are case-sensitive!"
+                    error_msg += "<b>🤔 Did you mean one of these?</b>\n"
+                    for similar_voice in similar_voices[:8]:  # Show more suggestions
+                        error_msg += f"• <code>/setvoice {similar_voice}</code>\n"
+                    error_msg += f"\n<b>💡 Tip:</b> Tap any command above to copy it!"
                 else:
-                    error_msg += f"**📋 Available Options:**\n"
-                    error_msg += f"Use `/voices` to see all {len(all_voices)} available voices.\n\n"
-                    error_msg += f"**💡 Tips:**\n"
-                    error_msg += f"• Check spelling carefully\n"
+                    error_msg += f"<b>📋 Available Options:</b>\n"
+                    error_msg += f"Use <code>/voices</code> to see all {len(all_voices)} available voices with easy copy format.\n\n"
+                    error_msg += f"<b>💡 Tips:</b>\n"
                     error_msg += f"• Voice names are case-sensitive\n"
-                    error_msg += f"• Try browsing `/voices` first"
+                    error_msg += f"• Try browsing /voices first\n"
+                    error_msg += f"• Popular voices: Rachel, Liam, Sarah, George"
 
-                await status_msg.edit_text(error_msg, parse_mode='Markdown')
+                await status_msg.edit_text(error_msg, parse_mode='HTML')
 
         except Exception as e:
             logger.error(f"Error in set_voice_command: {e}")
@@ -459,41 +477,44 @@ Use `/voices` to see options, then `/setvoice [name]`
                 )
 
             await update.message.reply_text(
-                f"⏰ **Rate Limit Reached!**\n\n"
+                f"⏰ <b>Rate Limit Reached!</b>\n\n"
                 f"You've exceeded the limit of {self.config.rate_limit_calls} requests per {self.config.rate_limit_window} seconds.\n\n"
-                f"⏳ **Please wait:** {rate_status['remaining_time']} seconds\n"
-                f"🔄 **Then try again:** Send your message after the cooldown"
+                f"⏳ <b>Please wait:</b> {rate_status['remaining_time']} seconds\n"
+                f"🔄 <b>Then try again:</b> Send your message after the cooldown",
+                parse_mode='HTML'
             )
             return
 
         # Validate message length
         if len(text) > self.config.max_message_length:
             await update.message.reply_text(
-                f"❌ **Message Too Long!**\n\n"
-                f"📏 **Your message:** {len(text)} characters\n"
-                f"📐 **Maximum allowed:** {self.config.max_message_length} characters\n"
-                f"✂️ **Exceeded by:** {len(text) - self.config.max_message_length} characters\n\n"
-                f"💡 **Tip:** Break your text into smaller parts and send multiple messages."
+                f"❌ <b>Message Too Long!</b>\n\n"
+                f"📏 <b>Your message:</b> {len(text)} characters\n"
+                f"📐 <b>Maximum allowed:</b> {self.config.max_message_length} characters\n"
+                f"✂️ <b>Exceeded by:</b> {len(text) - self.config.max_message_length} characters\n\n"
+                f"💡 <b>Tip:</b> Break your text into smaller parts and send multiple messages.",
+                parse_mode='HTML'
             )
             return
 
         # Check for empty or very short messages
         if len(text.strip()) < 2:
             await update.message.reply_text(
-                "❌ **Message Too Short!**\n\n"
+                "❌ <b>Message Too Short!</b>\n\n"
                 "Please send at least 2 characters of text for speech generation.\n\n"
-                "💡 **Example:** Try sending 'Hello world!'"
+                "💡 <b>Example:</b> Try sending 'Hello world!'",
+                parse_mode='HTML'
             )
             return
 
         # Send "generating" message with progress
         status_msg = await update.message.reply_text(
-            f"🔄 **Generating audio...**\n\n"
-            f"👤 **User:** {user_name}\n"
-            f"🎤 **Voice:** {await self.get_user_voice_name(user_id)}\n"
-            f"📝 **Text:** {text[:50]}{'...' if len(text) > 50 else ''}\n"
-            f"📊 **Length:** {len(text)} characters",
-            parse_mode='Markdown'
+            f"🔄 <b>Generating audio...</b>\n\n"
+            f"👤 <b>User:</b> {user_name}\n"
+            f"🎤 <b>Voice:</b> {await self.get_user_voice_name(user_id)}\n"
+            f"📝 <b>Text:</b> {text[:50]}{'...' if len(text) > 50 else ''}\n"
+            f"📊 <b>Length:</b> {len(text)} characters",
+            parse_mode='HTML'
         )
 
         try:
@@ -506,17 +527,17 @@ Use `/voices` to see options, then `/setvoice [name]`
             # Prepare caption with text preview
             text_preview = text[:100] + "..." if len(text) > 100 else text
             caption = f"""
-🎤 **Voice:** {voice_name}
-👤 **User:** {user_name}
-📝 **Text:** {text_preview}
-📊 **Stats:** {len(text)} chars, {len(text.split())} words
+🎤 <b>Voice:</b> {voice_name}
+👤 <b>User:</b> {user_name}
+📝 <b>Text:</b> {text_preview}
+📊 <b>Stats:</b> {len(text)} chars, {len(text.split())} words
             """.strip()
 
             # Send audio file with caption
             await update.message.reply_voice(
                 voice=audio_buffer,
                 caption=caption,
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
 
             # Clean up status message
@@ -535,28 +556,32 @@ Use `/voices` to see options, then `/setvoice [name]`
             error_msg = str(e)
             if "Authentication failed" in error_msg:
                 await status_msg.edit_text(
-                    "❌ **API Authentication Failed**\n\n"
+                    "❌ <b>API Authentication Failed</b>\n\n"
                     "The ElevenLabs API key is invalid or expired.\n"
-                    "Please contact the bot administrator."
+                    "Please contact the bot administrator.",
+                    parse_mode='HTML'
                 )
             elif "Quota exceeded" in error_msg:
                 await status_msg.edit_text(
-                    "❌ **Service Quota Exceeded**\n\n"
+                    "❌ <b>Service Quota Exceeded</b>\n\n"
                     "The ElevenLabs subscription limit has been reached.\n"
-                    "Please try again later or contact the administrator."
+                    "Please try again later or contact the administrator.",
+                    parse_mode='HTML'
                 )
             elif "Rate limit exceeded" in error_msg:
                 await status_msg.edit_text(
-                    "❌ **API Rate Limit Exceeded**\n\n"
+                    "❌ <b>API Rate Limit Exceeded</b>\n\n"
                     "Too many requests to ElevenLabs API.\n"
-                    "Please wait a moment and try again."
+                    "Please wait a moment and try again.",
+                    parse_mode='HTML'
                 )
             else:
                 await status_msg.edit_text(
-                    f"❌ **Audio Generation Failed**\n\n"
+                    f"❌ <b>Audio Generation Failed</b>\n\n"
                     f"An error occurred while generating your audio.\n"
                     f"Please try again in a moment.\n\n"
-                    f"**Error:** {error_msg[:100]}{'...' if len(error_msg) > 100 else ''}"
+                    f"<b>Error:</b> {error_msg[:100]}{'...' if len(error_msg) > 100 else ''}",
+                    parse_mode='HTML'
                 )
 
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -568,10 +593,11 @@ Use `/voices` to see options, then `/setvoice [name]`
         try:
             if update and update.effective_message:
                 await update.effective_message.reply_text(
-                    "❌ **Unexpected Error**\n\n"
+                    "❌ <b>Unexpected Error</b>\n\n"
                     "An unexpected error occurred while processing your request.\n"
                     "Please try again later.\n\n"
-                    "If the problem persists, contact the bot administrator."
+                    "If the problem persists, contact the bot administrator.",
+                    parse_mode='HTML'
                 )
         except Exception as e:
             logger.error(f"Failed to send error message to user: {e}")
@@ -606,7 +632,7 @@ Use `/voices` to see options, then `/setvoice [name]`
             self.application = Application.builder().token(self.config.telegram_bot_token).build()
             self.setup_handlers()
 
-            logger.info("Starting Telegram TTS Bot with Redis integration...")
+            logger.info("Starting Telegram TTS Bot with enhanced HTML formatting...")
             await self.application.initialize()
             await self.application.start()
             await self.application.updater.start_polling(
@@ -655,7 +681,7 @@ async def main():
         setup_logging(config.log_level)
 
         logger.info("=" * 50)
-        logger.info("Starting ElevenLabs Telegram TTS Bot")
+        logger.info("Starting ElevenLabs Telegram TTS Bot with HTML formatting")
         logger.info("=" * 50)
         logger.info(f"Environment: {config.environment}")
         logger.info(f"Log Level: {config.log_level}")
