@@ -9,16 +9,15 @@ from io import BytesIO
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Updated ElevenLabs import - handle API changes
+# Robust ElevenLabs import handling
 try:
-    from elevenlabs import ElevenLabs
-    ELEVENLABS_V1 = True
+    import elevenlabs
+    # Check what's available in the module
+    AVAILABLE_FUNCTIONS = dir(elevenlabs)
+    logger = logging.getLogger(__name__)
+    logger.info(f"ElevenLabs module contents: {AVAILABLE_FUNCTIONS}")
 except ImportError:
-    try:
-        from elevenlabs import set_api_key
-        ELEVENLABS_V1 = False
-    except ImportError:
-        raise ImportError("ElevenLabs library not properly installed")
+    raise ImportError("ElevenLabs library is not installed. Please install it with: pip install elevenlabs")
 
 from .config import Config
 from .redis_client import RedisClient
@@ -52,20 +51,11 @@ class TelegramTTSBot:
                 key_prefix=config.redis_key_prefix
             )
 
-        # Initialize ElevenLabs - handle both old and new API
-        if ELEVENLABS_V1:
-            # New API with client
-            self.elevenlabs_client = ElevenLabs(api_key=config.elevenlabs_api_key)
-        else:
-            # Old API with set_api_key
-            set_api_key(config.elevenlabs_api_key)
-            self.elevenlabs_client = None
-
+        # Initialize TTS Generator (it will handle ElevenLabs API internally)
         self.tts_generator = TTSGenerator(
             api_key=config.elevenlabs_api_key,
             default_voice=config.default_voice,
-            default_model=config.default_model,
-            client=self.elevenlabs_client
+            default_model=config.default_model
         )
 
         # Fallback in-memory storage
@@ -84,6 +74,13 @@ class TelegramTTSBot:
                 logger.info("Redis connected successfully")
             else:
                 logger.info("Running without Redis (in-memory storage)")
+
+            # Test ElevenLabs API
+            api_test = await self.tts_generator.test_api_connection()
+            if api_test:
+                logger.info("ElevenLabs API connection successful")
+            else:
+                logger.warning("ElevenLabs API connection failed - check your API key")
 
         except Exception as e:
             logger.warning(f"Redis connection failed, using in-memory storage: {e}")
@@ -243,8 +240,15 @@ Just send me any text message to convert it to speech!
 
                 # Cache the results
                 if self.redis_client and available_voices:
-                    voices_data = [{"name": v.name, "voice_id": v.voice_id} for v in available_voices]
-                    await self.redis_client.cache_voices(voices_data, ttl=3600)  # Cache for 1 hour
+                    voices_data = []
+                    for v in available_voices:
+                        if hasattr(v, 'name') and hasattr(v, 'voice_id'):
+                            voices_data.append({"name": v.name, "voice_id": v.voice_id})
+                        elif isinstance(v, dict):
+                            voices_data.append(v)
+
+                    if voices_data:
+                        await self.redis_client.cache_voices(voices_data, ttl=3600)
 
             if not available_voices:
                 await update.message.reply_text("❌ Unable to fetch voices. Please try again later.")
@@ -252,7 +256,8 @@ Just send me any text message to convert it to speech!
 
             voice_list = "🎭 **Available Voices:**\n\n"
             for voice in available_voices[:15]:  # Limit for readability
-                voice_list += f"• **{voice.name}**\n"
+                voice_name = getattr(voice, 'name', voice.get('name', 'Unknown')) if hasattr(voice, 'name') or isinstance(voice, dict) else str(voice)
+                voice_list += f"• **{voice_name}**\n"
 
             voice_list += f"\nUse `/setvoice [voice_name]` to change your voice"
             await update.message.reply_text(voice_list, parse_mode='Markdown')
@@ -278,22 +283,26 @@ Just send me any text message to convert it to speech!
             selected_voice = None
 
             for voice in available_voices:
-                if voice.name.lower() == voice_name.lower():
+                current_name = getattr(voice, 'name', voice.get('name', '')) if hasattr(voice, 'name') or isinstance(voice, dict) else ''
+                if current_name.lower() == voice_name.lower():
                     selected_voice = voice
                     break
 
             if selected_voice:
+                voice_id = getattr(selected_voice, 'voice_id', selected_voice.get('voice_id', '')) if hasattr(selected_voice, 'voice_id') or isinstance(selected_voice, dict) else ''
+                voice_name_final = getattr(selected_voice, 'name', selected_voice.get('name', voice_name)) if hasattr(selected_voice, 'name') or isinstance(selected_voice, dict) else voice_name
+
                 await self.save_user_settings(user_id, {
-                    'voice_id': selected_voice.voice_id,
-                    'voice_name': selected_voice.name
+                    'voice_id': voice_id,
+                    'voice_name': voice_name_final
                 })
 
                 await update.message.reply_text(
-                    f"✅ Voice changed to **{selected_voice.name}**", 
+                    f"✅ Voice changed to **{voice_name_final}**", 
                     parse_mode='Markdown'
                 )
                 await self.increment_usage("voice_change", user_id)
-                logger.info(f"User {user_id} changed voice to {selected_voice.name}")
+                logger.info(f"User {user_id} changed voice to {voice_name_final}")
             else:
                 await update.message.reply_text(
                     "❌ Voice not found. Use /voices to see available options."
@@ -320,7 +329,7 @@ Just send me any text message to convert it to speech!
 
         # Check rate limits
         if not await self.check_rate_limit(user_id):
-            rate_status = {"remaining_time": 5}
+            rate_status = {"remaining_time": 60}
             if self.redis_client:
                 rate_status = await self.redis_client.get_rate_limit_status(
                     user_id, self.config.rate_limit_window
