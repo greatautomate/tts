@@ -1,4 +1,3 @@
-
 import os
 import sys
 import logging
@@ -9,7 +8,17 @@ from io import BytesIO
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from elevenlabs import set_api_key
+
+# Updated ElevenLabs import - handle API changes
+try:
+    from elevenlabs import ElevenLabs
+    ELEVENLABS_V1 = True
+except ImportError:
+    try:
+        from elevenlabs import set_api_key
+        ELEVENLABS_V1 = False
+    except ImportError:
+        raise ImportError("ElevenLabs library not properly installed")
 
 from .config import Config
 from .redis_client import RedisClient
@@ -31,10 +40,10 @@ logger = logging.getLogger(__name__)
 
 class TelegramTTSBot:
     """Enhanced Telegram TTS Bot with Redis integration"""
-    
+
     def __init__(self, config: Config):
         self.config = config
-        
+
         # Initialize Redis client
         self.redis_client = None
         if config.redis_url:
@@ -42,18 +51,26 @@ class TelegramTTSBot:
                 redis_url=config.redis_url,
                 key_prefix=config.redis_key_prefix
             )
-        
-        # Initialize ElevenLabs
-        set_api_key(config.elevenlabs_api_key)
+
+        # Initialize ElevenLabs - handle both old and new API
+        if ELEVENLABS_V1:
+            # New API with client
+            self.elevenlabs_client = ElevenLabs(api_key=config.elevenlabs_api_key)
+        else:
+            # Old API with set_api_key
+            set_api_key(config.elevenlabs_api_key)
+            self.elevenlabs_client = None
+
         self.tts_generator = TTSGenerator(
             api_key=config.elevenlabs_api_key,
             default_voice=config.default_voice,
-            default_model=config.default_model
+            default_model=config.default_model,
+            client=self.elevenlabs_client
         )
-        
+
         # Fallback in-memory storage
         self.user_settings: Dict[int, Dict[str, Any]] = {}
-        
+
         # Application instance
         self.application = None
         self._running = True
@@ -67,7 +84,7 @@ class TelegramTTSBot:
                 logger.info("Redis connected successfully")
             else:
                 logger.info("Running without Redis (in-memory storage)")
-                
+
         except Exception as e:
             logger.warning(f"Redis connection failed, using in-memory storage: {e}")
             self.redis_client = None
@@ -83,10 +100,10 @@ class TelegramTTSBot:
             settings = await self.redis_client.get_user_settings(user_id)
             if settings:
                 return settings
-        
+
         # Fallback to in-memory
         return self.user_settings.get(user_id, {})
-    
+
     async def save_user_settings(self, user_id: int, settings: Dict[str, Any]):
         """Save user settings to Redis or memory"""
         if self.redis_client:
@@ -98,7 +115,7 @@ class TelegramTTSBot:
         else:
             # Fallback to in-memory
             self.user_settings[user_id] = settings
-    
+
     async def check_rate_limit(self, user_id: int) -> bool:
         """Check rate limits using Redis or in-memory"""
         if self.redis_client:
@@ -107,10 +124,10 @@ class TelegramTTSBot:
                 self.config.rate_limit_calls,
                 self.config.rate_limit_window
             )
-        
+
         # Fallback rate limiting logic (simplified)
         return True  # For now, allow all requests when Redis unavailable
-    
+
     async def increment_usage(self, metric: str, user_id: Optional[int] = None):
         """Track usage statistics"""
         if self.redis_client:
@@ -119,7 +136,7 @@ class TelegramTTSBot:
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command"""
         welcome_message = """
-🎤 **Welcome to MedusaXD TTS Bot!**
+🎤 **Welcome to ElevenLabs TTS Bot!**
 
 Send me any text and I'll convert it to speech using AI voices.
 
@@ -162,14 +179,14 @@ Just send me any text message to convert it to speech!
         """Handle /settings command"""
         user_id = update.effective_user.id
         user_settings = await self.get_user_settings(user_id)
-        
+
         # Get rate limit status
         rate_status = {"calls": 0, "remaining_time": 0}
         if self.redis_client:
             rate_status = await self.redis_client.get_rate_limit_status(
                 user_id, self.config.rate_limit_window
             )
-        
+
         settings_text = f"""
 ⚙️ **Your Settings:**
 
@@ -192,20 +209,20 @@ Just send me any text message to convert it to speech!
         if not self.redis_client:
             await update.message.reply_text("📊 Statistics are not available without Redis.")
             return
-        
+
         try:
             stats = await self.redis_client.get_usage_stats()
             stats_text = "📊 **Bot Statistics:**\n\n"
-            
+
             for metric, count in stats.items():
                 formatted_metric = metric.replace("_", " ").title()
                 stats_text += f"• **{formatted_metric}**: {count}\n"
-            
+
             if not stats:
                 stats_text += "No statistics available yet."
-            
+
             await update.message.reply_text(stats_text, parse_mode='Markdown')
-            
+
         except Exception as e:
             logger.error(f"Error getting stats: {e}")
             await update.message.reply_text("❌ Error retrieving statistics.")
@@ -219,28 +236,28 @@ Just send me any text message to convert it to speech!
                 cached_voices = await self.redis_client.get_cached_voices()
                 if cached_voices:
                     available_voices = [type('Voice', (), voice) for voice in cached_voices]
-            
+
             # If no cache, fetch from API
             if not available_voices:
                 available_voices = await self.tts_generator.get_voices()
-                
+
                 # Cache the results
                 if self.redis_client and available_voices:
                     voices_data = [{"name": v.name, "voice_id": v.voice_id} for v in available_voices]
                     await self.redis_client.cache_voices(voices_data, ttl=3600)  # Cache for 1 hour
-            
+
             if not available_voices:
                 await update.message.reply_text("❌ Unable to fetch voices. Please try again later.")
                 return
-            
+
             voice_list = "🎭 **Available Voices:**\n\n"
             for voice in available_voices[:15]:  # Limit for readability
                 voice_list += f"• **{voice.name}**\n"
-            
+
             voice_list += f"\nUse `/setvoice [voice_name]` to change your voice"
             await update.message.reply_text(voice_list, parse_mode='Markdown')
             await self.increment_usage("voices_command", update.effective_user.id)
-            
+
         except Exception as e:
             logger.error(f"Error in list_voices_command: {e}")
             await update.message.reply_text("❌ Error fetching voices. Please try again later.")
@@ -252,25 +269,25 @@ Just send me any text message to convert it to speech!
                 "Please specify a voice name. Use /voices to see available options."
             )
             return
-        
+
         voice_name = " ".join(context.args)
         user_id = update.effective_user.id
-        
+
         try:
             available_voices = await self.tts_generator.get_voices()
             selected_voice = None
-            
+
             for voice in available_voices:
                 if voice.name.lower() == voice_name.lower():
                     selected_voice = voice
                     break
-            
+
             if selected_voice:
                 await self.save_user_settings(user_id, {
                     'voice_id': selected_voice.voice_id,
                     'voice_name': selected_voice.name
                 })
-                
+
                 await update.message.reply_text(
                     f"✅ Voice changed to **{selected_voice.name}**", 
                     parse_mode='Markdown'
@@ -281,7 +298,7 @@ Just send me any text message to convert it to speech!
                 await update.message.reply_text(
                     "❌ Voice not found. Use /voices to see available options."
                 )
-                
+
         except Exception as e:
             logger.error(f"Error in set_voice_command: {e}")
             await update.message.reply_text("❌ Error setting voice. Please try again later.")
@@ -300,46 +317,46 @@ Just send me any text message to convert it to speech!
         """Handle text messages and convert to speech"""
         text = update.message.text
         user_id = update.effective_user.id
-        
+
         # Check rate limits
         if not await self.check_rate_limit(user_id):
-            rate_status = {"remaining_time": 60}
+            rate_status = {"remaining_time": 5}
             if self.redis_client:
                 rate_status = await self.redis_client.get_rate_limit_status(
                     user_id, self.config.rate_limit_window
                 )
-            
+
             await update.message.reply_text(
                 f"⏰ Rate limit reached! Please wait {rate_status['remaining_time']} seconds before making more requests."
             )
             return
-        
+
         # Validate message length
         if len(text) > self.config.max_message_length:
             await update.message.reply_text(
                 f"❌ Message too long! Please keep it under {self.config.max_message_length} characters."
             )
             return
-        
+
         # Send "generating" message
         status_msg = await update.message.reply_text("🔄 Generating audio...")
-        
+
         try:
             voice_id = await self.get_user_voice_id(user_id)
             audio_buffer = await self.tts_generator.generate_audio(text, voice_id)
-            
+
             # Send audio file
             await update.message.reply_voice(
                 voice=audio_buffer,
                 caption=f"🎤 **Generated with voice**: {await self.get_user_voice_name(user_id)}",
                 parse_mode='Markdown'
             )
-            
+
             await status_msg.delete()
             await self.increment_usage("tts_generation", user_id)
             await self.increment_usage("characters_processed")
             logger.info(f"Generated audio for user {user_id}, text length: {len(text)}")
-            
+
         except Exception as e:
             logger.error(f"Error generating audio for user {user_id}: {e}")
             await status_msg.edit_text(f"❌ Error generating audio: {str(e)}")
@@ -353,7 +370,7 @@ Just send me any text message to convert it to speech!
         """Setup bot handlers"""
         if not self.application:
             return
-            
+
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("settings", self.settings_command))
@@ -369,21 +386,21 @@ Just send me any text message to convert it to speech!
         """Start the bot"""
         try:
             await self.start_bot()
-            
+
             self.application = Application.builder().token(self.config.telegram_bot_token).build()
             self.setup_handlers()
-            
-            logger.info("Starting MedusaXD TTS Bot with Redis...")
+
+            logger.info("Starting Telegram TTS Bot with Redis...")
             await self.application.initialize()
             await self.application.start()
             await self.application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
-            
+
             logger.info("Bot is running...")
-            
+
             # Keep the bot running
             while self._running:
                 await asyncio.sleep(1)
-                
+
         except Exception as e:
             logger.error(f"Error starting bot: {e}")
             raise
@@ -392,12 +409,12 @@ Just send me any text message to convert it to speech!
         """Stop the bot gracefully"""
         logger.info("Stopping bot...")
         self._running = False
-        
+
         if self.application:
             await self.application.updater.stop()
             await self.application.stop()
             await self.application.shutdown()
-        
+
         await self.stop_bot()
 
 def signal_handler(bot: TelegramTTSBot):
@@ -413,16 +430,16 @@ async def main():
         # Load configuration
         config = Config.from_env()
         setup_logging(config.log_level)
-        
+
         # Create and start bot
         bot = TelegramTTSBot(config)
-        
+
         # Setup signal handlers for graceful shutdown
         for sig in [signal.SIGTERM, signal.SIGINT]:
             signal.signal(sig, signal_handler(bot))
-        
+
         await bot.start()
-        
+
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
@@ -433,4 +450,3 @@ if __name__ == "__main__":
     # Create logs directory if it doesn't exist
     os.makedirs("logs", exist_ok=True)
     asyncio.run(main())
-
