@@ -9,16 +9,6 @@ from io import BytesIO
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Robust ElevenLabs import handling
-try:
-    import elevenlabs
-    # Check what's available in the module
-    AVAILABLE_FUNCTIONS = dir(elevenlabs)
-    logger = logging.getLogger(__name__)
-    logger.info(f"ElevenLabs module contents: {AVAILABLE_FUNCTIONS}")
-except ImportError:
-    raise ImportError("ElevenLabs library is not installed. Please install it with: pip install elevenlabs")
-
 from .config import Config
 from .redis_client import RedisClient
 from .utils import TTSGenerator
@@ -51,7 +41,7 @@ class TelegramTTSBot:
                 key_prefix=config.redis_key_prefix
             )
 
-        # Initialize TTS Generator (it will handle ElevenLabs API internally)
+        # Initialize TTS Generator
         self.tts_generator = TTSGenerator(
             api_key=config.elevenlabs_api_key,
             default_voice=config.default_voice,
@@ -232,7 +222,11 @@ Just send me any text message to convert it to speech!
             if self.redis_client:
                 cached_voices = await self.redis_client.get_cached_voices()
                 if cached_voices:
-                    available_voices = [type('Voice', (), voice) for voice in cached_voices]
+                    # Create voice-like objects from cached data
+                    available_voices = []
+                    for voice_data in cached_voices:
+                        voice_obj = type('Voice', (), voice_data)()
+                        available_voices.append(voice_obj)
 
             # If no cache, fetch from API
             if not available_voices:
@@ -241,11 +235,17 @@ Just send me any text message to convert it to speech!
                 # Cache the results
                 if self.redis_client and available_voices:
                     voices_data = []
-                    for v in available_voices:
-                        if hasattr(v, 'name') and hasattr(v, 'voice_id'):
-                            voices_data.append({"name": v.name, "voice_id": v.voice_id})
-                        elif isinstance(v, dict):
-                            voices_data.append(v)
+                    for voice in available_voices:
+                        # Safely extract voice data
+                        voice_dict = {
+                            "name": getattr(voice, 'name', 'Unknown'),
+                            "voice_id": getattr(voice, 'voice_id', ''),
+                            "category": getattr(voice, 'category', 'generated'),
+                            "description": getattr(voice, 'description', ''),
+                            "gender": getattr(voice, 'gender', 'unknown'),
+                            "age": getattr(voice, 'age', 'unknown')
+                        }
+                        voices_data.append(voice_dict)
 
                     if voices_data:
                         await self.redis_client.cache_voices(voices_data, ttl=3600)
@@ -254,12 +254,44 @@ Just send me any text message to convert it to speech!
                 await update.message.reply_text("❌ Unable to fetch voices. Please try again later.")
                 return
 
+            # Format voice list with categories
             voice_list = "🎭 **Available Voices:**\n\n"
-            for voice in available_voices[:15]:  # Limit for readability
-                voice_name = getattr(voice, 'name', voice.get('name', 'Unknown')) if hasattr(voice, 'name') or isinstance(voice, dict) else str(voice)
-                voice_list += f"• **{voice_name}**\n"
 
-            voice_list += f"\nUse `/setvoice [voice_name]` to change your voice"
+            # Group by category
+            categorized_voices = {}
+            for voice in available_voices[:20]:  # Limit to prevent message overflow
+                voice_name = getattr(voice, 'name', 'Unknown')
+                voice_category = getattr(voice, 'category', 'generated')
+                voice_gender = getattr(voice, 'gender', '')
+                voice_age = getattr(voice, 'age', '')
+
+                if voice_category not in categorized_voices:
+                    categorized_voices[voice_category] = []
+
+                # Add gender and age info if available
+                info_parts = []
+                if voice_gender and voice_gender != 'unknown':
+                    info_parts.append(voice_gender)
+                if voice_age and voice_age != 'unknown':
+                    info_parts.append(voice_age)
+
+                info_str = f" ({', '.join(info_parts)})" if info_parts else ""
+                categorized_voices[voice_category].append(f"**{voice_name}**{info_str}")
+
+            # Display categorized voices
+            for category, voices_in_category in categorized_voices.items():
+                category_emoji = "🤖" if category == "generated" else "👤" if category == "cloned" else "🎨"
+                category_title = category.replace('_', ' ').title()
+                voice_list += f"{category_emoji} **{category_title}:**\n"
+
+                for voice_info in voices_in_category[:8]:  # Limit per category
+                    voice_list += f"  • {voice_info}\n"
+
+                voice_list += "\n"
+
+            voice_list += f"Use `/setvoice [voice_name]` to change your voice\n"
+            voice_list += f"Total voices: {len(available_voices)}"
+
             await update.message.reply_text(voice_list, parse_mode='Markdown')
             await self.increment_usage("voices_command", update.effective_user.id)
 
@@ -282,31 +314,60 @@ Just send me any text message to convert it to speech!
             available_voices = await self.tts_generator.get_voices()
             selected_voice = None
 
+            # Search for voice (case-insensitive)
             for voice in available_voices:
-                current_name = getattr(voice, 'name', voice.get('name', '')) if hasattr(voice, 'name') or isinstance(voice, dict) else ''
+                current_name = getattr(voice, 'name', '')
                 if current_name.lower() == voice_name.lower():
                     selected_voice = voice
                     break
 
             if selected_voice:
-                voice_id = getattr(selected_voice, 'voice_id', selected_voice.get('voice_id', '')) if hasattr(selected_voice, 'voice_id') or isinstance(selected_voice, dict) else ''
-                voice_name_final = getattr(selected_voice, 'name', selected_voice.get('name', voice_name)) if hasattr(selected_voice, 'name') or isinstance(selected_voice, dict) else voice_name
+                voice_id = getattr(selected_voice, 'voice_id', '')
+                voice_name_final = getattr(selected_voice, 'name', voice_name)
+                voice_category = getattr(selected_voice, 'category', 'generated')
+                voice_gender = getattr(selected_voice, 'gender', '')
 
                 await self.save_user_settings(user_id, {
                     'voice_id': voice_id,
-                    'voice_name': voice_name_final
+                    'voice_name': voice_name_final,
+                    'voice_category': voice_category,
+                    'voice_gender': voice_gender
                 })
 
+                # Create info string
+                info_parts = []
+                if voice_category:
+                    info_parts.append(voice_category.replace('_', ' ').title())
+                if voice_gender and voice_gender != 'unknown':
+                    info_parts.append(voice_gender.title())
+
+                info_str = f" ({', '.join(info_parts)})" if info_parts else ""
+
                 await update.message.reply_text(
-                    f"✅ Voice changed to **{voice_name_final}**", 
+                    f"✅ Voice changed to **{voice_name_final}**{info_str}", 
                     parse_mode='Markdown'
                 )
                 await self.increment_usage("voice_change", user_id)
                 logger.info(f"User {user_id} changed voice to {voice_name_final}")
             else:
-                await update.message.reply_text(
-                    "❌ Voice not found. Use /voices to see available options."
-                )
+                # Suggest similar voices
+                similar_voices = []
+                voice_name_lower = voice_name.lower()
+
+                for voice in available_voices[:10]:  # Check first 10 for suggestions
+                    current_name = getattr(voice, 'name', '')
+                    if voice_name_lower in current_name.lower():
+                        similar_voices.append(current_name)
+
+                error_msg = "❌ Voice not found."
+                if similar_voices:
+                    error_msg += f"\n\n**Did you mean:**\n"
+                    for similar_voice in similar_voices[:3]:  # Show top 3 suggestions
+                        error_msg += f"• {similar_voice}\n"
+                else:
+                    error_msg += " Use /voices to see available options."
+
+                await update.message.reply_text(error_msg, parse_mode='Markdown')
 
         except Exception as e:
             logger.error(f"Error in set_voice_command: {e}")
@@ -343,7 +404,15 @@ Just send me any text message to convert it to speech!
         # Validate message length
         if len(text) > self.config.max_message_length:
             await update.message.reply_text(
-                f"❌ Message too long! Please keep it under {self.config.max_message_length} characters."
+                f"❌ Message too long! Please keep it under {self.config.max_message_length} characters.\n\n"
+                f"Your message: {len(text)} characters"
+            )
+            return
+
+        # Check for empty or very short messages
+        if len(text.strip()) < 2:
+            await update.message.reply_text(
+                "❌ Message too short! Please send at least 2 characters of text."
             )
             return
 
@@ -352,43 +421,76 @@ Just send me any text message to convert it to speech!
 
         try:
             voice_id = await self.get_user_voice_id(user_id)
+            voice_name = await self.get_user_voice_name(user_id)
+
+            # Generate audio
             audio_buffer = await self.tts_generator.generate_audio(text, voice_id)
 
-            # Send audio file
+            # Send audio file with caption
+            caption = f"🎤 **Voice**: {voice_name}\n📝 **Text**: {text[:100]}{'...' if len(text) > 100 else ''}"
+
             await update.message.reply_voice(
                 voice=audio_buffer,
-                caption=f"🎤 **Generated with voice**: {await self.get_user_voice_name(user_id)}",
+                caption=caption,
                 parse_mode='Markdown'
             )
 
+            # Clean up status message
             await status_msg.delete()
+
+            # Track usage
             await self.increment_usage("tts_generation", user_id)
             await self.increment_usage("characters_processed")
-            logger.info(f"Generated audio for user {user_id}, text length: {len(text)}")
+
+            logger.info(f"Generated audio for user {user_id}, voice: {voice_name}, text length: {len(text)}")
 
         except Exception as e:
             logger.error(f"Error generating audio for user {user_id}: {e}")
-            await status_msg.edit_text(f"❌ Error generating audio: {str(e)}")
+
+            # Update status message with error
+            error_msg = str(e)
+            if "Authentication failed" in error_msg:
+                await status_msg.edit_text("❌ API authentication failed. Please contact the bot admin.")
+            elif "Quota exceeded" in error_msg:
+                await status_msg.edit_text("❌ Service quota exceeded. Please try again later.")
+            elif "Rate limit exceeded" in error_msg:
+                await status_msg.edit_text("❌ Too many requests. Please wait a moment and try again.")
+            else:
+                await status_msg.edit_text(f"❌ Error generating audio. Please try again.\n\nError: {error_msg}")
 
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle errors"""
         logger.error(f"Update {update} caused error {context.error}")
         await self.increment_usage("errors")
 
+        # Try to inform user about the error
+        try:
+            if update.effective_message:
+                await update.effective_message.reply_text(
+                    "❌ An unexpected error occurred. Please try again later."
+                )
+        except Exception as e:
+            logger.error(f"Failed to send error message to user: {e}")
+
     def setup_handlers(self):
         """Setup bot handlers"""
         if not self.application:
             return
 
+        # Command handlers
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("settings", self.settings_command))
         self.application.add_handler(CommandHandler("stats", self.stats_command))
         self.application.add_handler(CommandHandler("voices", self.list_voices_command))
         self.application.add_handler(CommandHandler("setvoice", self.set_voice_command))
+
+        # Message handler for text-to-speech
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text_message)
         )
+
+        # Error handler
         self.application.add_error_handler(self.error_handler)
 
     async def start(self):
@@ -396,15 +498,19 @@ Just send me any text message to convert it to speech!
         try:
             await self.start_bot()
 
+            # Create Telegram application
             self.application = Application.builder().token(self.config.telegram_bot_token).build()
             self.setup_handlers()
 
             logger.info("Starting Telegram TTS Bot with Redis...")
             await self.application.initialize()
             await self.application.start()
-            await self.application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+            await self.application.updater.start_polling(
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=True
+            )
 
-            logger.info("Bot is running...")
+            logger.info("Bot is running and ready to receive messages...")
 
             # Keep the bot running
             while self._running:
@@ -425,6 +531,7 @@ Just send me any text message to convert it to speech!
             await self.application.shutdown()
 
         await self.stop_bot()
+        logger.info("Bot stopped successfully")
 
 def signal_handler(bot: TelegramTTSBot):
     """Handle shutdown signals"""
@@ -439,6 +546,10 @@ async def main():
         # Load configuration
         config = Config.from_env()
         setup_logging(config.log_level)
+
+        logger.info("Starting Telegram TTS Bot...")
+        logger.info(f"Environment: {config.environment}")
+        logger.info(f"Redis enabled: {'Yes' if config.redis_url else 'No'}")
 
         # Create and start bot
         bot = TelegramTTSBot(config)
