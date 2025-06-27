@@ -1,79 +1,91 @@
 import time
 import asyncio
 import logging
-import requests
 from functools import wraps
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from io import BytesIO
+
+# Use the official ElevenLabs client
+from elevenlabs.client import ElevenLabs
+from elevenlabs import Voice
 
 logger = logging.getLogger(__name__)
 
 class TTSGenerator:
-    """Text-to-speech generation using direct HTTP requests to ElevenLabs API"""
+    """Text-to-speech generation using official ElevenLabs Python SDK"""
 
     def __init__(self, api_key: str, default_voice: str, default_model: str):
         self.api_key = api_key
         self.default_voice = default_voice
         self.default_model = default_model
-        self.base_url = "https://api.elevenlabs.io/v1"
-        self.headers = {
-            "Accept": "audio/mpeg",
-            "Content-Type": "application/json",
-            "xi-api-key": self.api_key
-        }
 
-    def _is_rate_limit_error(self, status_code: int, response_text: str) -> bool:
+        # Initialize ElevenLabs client
+        self.client = ElevenLabs(api_key=api_key)
+
+    def _is_rate_limit_error(self, error: Exception) -> bool:
         """Check if error is rate limiting related"""
-        return status_code == 429 or "rate limit" in response_text.lower()
+        error_indicators = [
+            "rate limit", "429", "too many requests", 
+            "quota exceeded", "throttle"
+        ]
+        error_str = str(error).lower()
+        return any(indicator in error_str for indicator in error_indicators)
 
-    def _is_auth_error(self, status_code: int, response_text: str) -> bool:
+    def _is_auth_error(self, error: Exception) -> bool:
         """Check if error is authentication related"""
-        return status_code == 401 or "unauthorized" in response_text.lower()
+        auth_indicators = [
+            "auth", "401", "unauthorized", "invalid api key",
+            "forbidden", "access denied"
+        ]
+        error_str = str(error).lower()
+        return any(indicator in error_str for indicator in auth_indicators)
 
-    def _is_quota_error(self, status_code: int, response_text: str) -> bool:
+    def _is_quota_error(self, error: Exception) -> bool:
         """Check if error is quota/billing related"""
-        quota_indicators = ["quota", "billing", "payment", "subscription", "credits"]
-        return any(indicator in response_text.lower() for indicator in quota_indicators)
+        quota_indicators = [
+            "quota", "billing", "payment", "subscription",
+            "credits", "usage limit"
+        ]
+        error_str = str(error).lower()
+        return any(indicator in error_str for indicator in quota_indicators)
 
     async def generate_audio(self, text: str, voice_id: str) -> BytesIO:
-        """Generate audio using direct HTTP requests"""
+        """Generate audio using official ElevenLabs SDK"""
         max_retries = 3
         retry_delay = 1
-
-        url = f"{self.base_url}/text-to-speech/{voice_id}"
-        data = {
-            "text": text,
-            "model_id": self.default_model,
-            "voice_settings": {
-                "stability": 0.5,
-                "similarity_boost": 0.5
-            }
-        }
 
         for attempt in range(max_retries):
             try:
                 # Run in thread pool to avoid blocking
                 loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(
+
+                # Use the official client
+                audio_generator = await loop.run_in_executor(
                     None,
-                    lambda: requests.post(url, json=data, headers=self.headers, timeout=30)
+                    lambda: self.client.generate(
+                        text=text,
+                        voice=voice_id,
+                        model=self.default_model
+                    )
                 )
 
-                if response.status_code == 200:
-                    audio_buffer = BytesIO(response.content)
-                    audio_buffer.seek(0)
-                    return audio_buffer
+                # Convert generator to bytes
+                audio_bytes = b"".join(audio_generator)
+                audio_buffer = BytesIO(audio_bytes)
+                audio_buffer.seek(0)
+                return audio_buffer
 
-                # Handle specific errors
-                response_text = response.text
+            except Exception as e:
+                logger.error(f"Audio generation attempt {attempt + 1} failed: {e}")
 
-                if self._is_auth_error(response.status_code, response_text):
+                # Handle specific error types
+                if self._is_auth_error(e):
                     raise Exception("❌ Authentication failed. Please check your ElevenLabs API key.")
 
-                elif self._is_quota_error(response.status_code, response_text):
+                elif self._is_quota_error(e):
                     raise Exception("❌ Quota exceeded. Please check your ElevenLabs subscription.")
 
-                elif self._is_rate_limit_error(response.status_code, response_text):
+                elif self._is_rate_limit_error(e):
                     if attempt < max_retries - 1:
                         wait_time = retry_delay * (2 ** attempt)
                         logger.warning(f"Rate limited, waiting {wait_time}s...")
@@ -82,26 +94,7 @@ class TTSGenerator:
                     else:
                         raise Exception("❌ Rate limit exceeded. Please try again in a moment.")
 
-                else:
-                    error_msg = f"HTTP {response.status_code}: {response_text}"
-                    if attempt < max_retries - 1:
-                        logger.warning(f"Attempt {attempt + 1} failed: {error_msg}")
-                        await asyncio.sleep(retry_delay)
-                        continue
-                    else:
-                        raise Exception(f"❌ Audio generation failed: {error_msg}")
-
-            except requests.exceptions.RequestException as e:
-                if attempt < max_retries - 1:
-                    logger.warning(f"Request failed, attempt {attempt + 1}: {e}")
-                    await asyncio.sleep(retry_delay)
-                    continue
-                else:
-                    raise Exception(f"❌ Network error: {str(e)}")
-
-            except Exception as e:
-                if "Authentication failed" in str(e) or "Quota exceeded" in str(e) or "Rate limit exceeded" in str(e):
-                    raise e
+                # Generic retry for other errors
                 else:
                     if attempt < max_retries - 1:
                         await asyncio.sleep(retry_delay)
@@ -109,45 +102,35 @@ class TTSGenerator:
                     else:
                         raise Exception(f"❌ Audio generation failed: {str(e)}")
 
-    async def get_voices(self) -> List[Dict]:
-        """Get available voices using direct HTTP requests"""
+    async def get_voices(self) -> List[Voice]:
+        """Get available voices using official SDK"""
         try:
-            url = f"{self.base_url}/voices"
-            headers = {"xi-api-key": self.api_key}
-
             loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
+            voices_response = await loop.run_in_executor(
                 None,
-                lambda: requests.get(url, headers=headers, timeout=30)
+                lambda: self.client.voices.get_all()
             )
 
-            if response.status_code == 200:
-                voices_data = response.json().get("voices", [])
-                # Convert to objects with name and voice_id attributes
-                voices_list = []
-                for voice_data in voices_data:
-                    voice_obj = type('Voice', (), {
-                        'name': voice_data.get('name', 'Unknown'),
-                        'voice_id': voice_data.get('voice_id', ''),
-                        **voice_data
-                    })()
-                    voices_list.append(voice_obj)
-
-                logger.info(f"Successfully fetched {len(voices_list)} voices")
-                return voices_list
+            # Extract voices from response
+            if hasattr(voices_response, 'voices'):
+                voices_list = voices_response.voices
             else:
-                logger.error(f"Failed to fetch voices: HTTP {response.status_code}")
-                return []
+                voices_list = voices_response
+
+            logger.info(f"Successfully fetched {len(voices_list)} voices")
+            return voices_list
 
         except Exception as e:
             logger.error(f"Error fetching voices: {e}")
+            if self._is_auth_error(e):
+                logger.error("Authentication error when fetching voices")
             return []
 
     async def test_api_connection(self) -> bool:
-        """Test API connection by fetching voices"""
+        """Test API connection"""
         try:
-            voices_list = await self.get_voices()
-            return len(voices_list) > 0
+            test_voices = await self.get_voices()
+            return len(test_voices) > 0
         except Exception as e:
             logger.error(f"API connection test failed: {e}")
             return False
