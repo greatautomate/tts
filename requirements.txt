@@ -1,7 +1,5 @@
 python-telegram-bot==20.7
-elevenlabs==0.2.26
+elevenlabs==1.0.0
 python-dotenv==1.0.0
 redis[hiredis]==5.0.1
 requests==2.31.0
-
-
