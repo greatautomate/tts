@@ -21,9 +21,6 @@ services:
           type: redis
           name: medusaxd-tts-bot-redis
           property: connectionString
-    scaling:
-      minInstances: 1
-      maxInstances: 1
     
   - type: redis
     name: medusaxd-tts-bot-redis
