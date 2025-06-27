@@ -1,0 +1,35 @@
+
+version: '3.8'
+
+services:
+  telegram-bot:
+    build: .
+    container_name: medusaxd-tts-bot
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+    
+  redis:
+    image: redis:7-alpine
+    container_name: medusaxd-tts-bot-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory-policy allkeys-lru
+
+volumes:
+  redis_data:
+
+

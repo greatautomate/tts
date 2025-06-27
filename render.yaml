@@ -1,0 +1,33 @@
+
+services:
+  - type: worker
+    name: medusaxd-tts-bot
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: LOG_LEVEL
+        value: INFO
+      - key: ENVIRONMENT
+        value: production
+      - key: PYTHONPATH
+        value: /app
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: medusaxd-tts-bot-redis
+          property: connectionString
+    scaling:
+      minInstances: 1
+      maxInstances: 1
+    
+  - type: redis
+    name: medusaxd-tts-bot-redis
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
+
+
