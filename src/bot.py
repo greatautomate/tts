@@ -512,7 +512,7 @@ Use <code>/voices</code> to see options, then <code>/setvoice [name]</code>
             f"🔄 <b>Generating audio...</b>\n\n"
             f"👤 <b>User:</b> {user_name}\n"
             f"🎤 <b>Voice:</b> {await self.get_user_voice_name(user_id)}\n"
-            f"📝 <b>Text:</b> {text[:50]}{'...' if len(text) > 50 else ''}\n"
+            f"📝 <b>Text:</b> <code>[Content Hidden]</code>\n"
             f"📊 <b>Length:</b> {len(text)} characters",
             parse_mode='HTML'
         )
@@ -524,12 +524,11 @@ Use <code>/voices</code> to see options, then <code>/setvoice [name]</code>
             # Generate audio
             audio_buffer = await self.tts_generator.generate_audio(text, voice_id)
 
-            # Prepare caption with text preview
-            text_preview = text[:100] + "..." if len(text) > 100 else text
+            # Prepare caption with hidden text content
             caption = f"""
 🎤 <b>Voice:</b> {voice_name}
 👤 <b>User:</b> {user_name}
-📝 <b>Text:</b> {text_preview}
+📝 <b>Text:</b> <code>[Content Hidden]</code>
 📊 <b>Stats:</b> {len(text)} chars, {len(text.split())} words
             """.strip()
 
@@ -611,9 +610,9 @@ Use <code>/voices</code> to see options, then <code>/setvoice [name]</code>
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("settings", self.settings_command))
-        self.application.add_handler(CommandHandler("stats", self.stats_command))
         self.application.add_handler(CommandHandler("voices", self.list_voices_command))
         self.application.add_handler(CommandHandler("setvoice", self.set_voice_command))
+        self.application.add_handler(CommandHandler("stats", self.stats_command))
 
         # Message handler for text-to-speech
         self.application.add_handler(
